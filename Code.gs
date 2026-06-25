@@ -4,13 +4,12 @@
  *
  * Endpoints:
  *   GET  ?action=load              → public read of the schedule
- *   GET  ?action=whoami&token=...&editPassword=... → verify editor access
- *   POST {action:'update', token, editPassword, di, ri, field, value} → write one cell
+ *   GET  ?action=whoami&editPassword=... → verify editor password
+ *   POST {action:'update', editPassword, di, ri, field, value} → write one cell
  *
  * Auth model:
  *   - Anyone can read (GET load).
- *   - Writes require a valid Microsoft Graph access token whose email is on
- *     ALLOWED_EMAILS below, plus the edit password stored in Script Properties.
+ *   - Writes require the edit password stored in Script Properties.
  *
  * Setup: see SETUP.md.
  */
@@ -20,13 +19,6 @@
    ========================================================================= */
 const SHEET_NAME = 'Schedule';
 const AUDIT_SHEET_NAME = 'Audit';
-
-// Emails of people allowed to EDIT. Case-insensitive.
-// Add yourself + anyone else who should be able to edit.
-const ALLOWED_EMAILS = [
-  'akhilesh@xtransmatrix.com'
-  // 'someone.else@xtransmatrix.com',
-];
 
 // Field shortcode → column header on the sheet
 const FIELD_MAP = {
@@ -48,7 +40,7 @@ function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || 'load';
     if (action === 'load')   return jsonOut({ ok: true, days: loadDays() });
-    if (action === 'whoami') return handleWhoami_(e.parameter.token, e.parameter.editPassword);
+    if (action === 'whoami') return handleWhoami_(e.parameter.editPassword);
     return jsonOut({ ok: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOut({ ok: false, error: String(err) });
@@ -65,52 +57,19 @@ function doPost(e) {
   return jsonOut({ ok: false, error: 'Unknown action: ' + action });
 }
 
-/* =========================================================================
-   AUTH HELPERS
-   ========================================================================= */
-function verifyToken_(token) {
-  if (!token) return null;
-  try {
-    const resp = UrlFetchApp.fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    });
-    if (resp.getResponseCode() !== 200) return null;
-    return JSON.parse(resp.getContentText());
-  } catch (err) {
-    return null;
-  }
-}
-
-function userEmail_(user) {
-  return ((user && (user.mail || user.userPrincipalName)) || '').toLowerCase();
-}
-
-function isAllowed_(user) {
-  const email = userEmail_(user);
-  if (!email) return false;
-  return ALLOWED_EMAILS.map(function (e) { return String(e).toLowerCase(); }).indexOf(email) >= 0;
-}
-
 function isEditPasswordValid_(password) {
   const expected = PropertiesService.getScriptProperties().getProperty(EDIT_PASSWORD_PROPERTY);
   if (!expected) return false;
   return String(password || '') === expected;
 }
 
-function handleWhoami_(token, editPassword) {
-  const user = verifyToken_(token);
-  if (!user) return jsonOut({ ok: false, error: 'Invalid token' });
-  const emailAllowed = isAllowed_(user);
+function handleWhoami_(editPassword) {
   const passwordAllowed = isEditPasswordValid_(editPassword);
   return jsonOut({
     ok: true,
-    email: userEmail_(user),
-    name: user.displayName || '',
-    emailAllowed: emailAllowed,
     passwordRequired: true,
     passwordAccepted: passwordAllowed,
-    authorized: emailAllowed && passwordAllowed
+    authorized: passwordAllowed
   });
 }
 
@@ -172,9 +131,6 @@ function loadDays() {
    SHEET WRITE
    ========================================================================= */
 function handleUpdate_(body) {
-  const user = verifyToken_(body.token);
-  if (!user)            return jsonOut({ ok: false, error: 'Invalid token' });
-  if (!isAllowed_(user)) return jsonOut({ ok: false, error: 'Not authorized to edit' });
   if (!isEditPasswordValid_(body.editPassword)) return jsonOut({ ok: false, error: 'Edit password required' });
 
   const di = Number(body.di), ri = Number(body.ri);
@@ -215,14 +171,14 @@ function handleUpdate_(body) {
   if (foundRow < 0) return jsonOut({ ok: false, error: 'Row not found (day ' + targetDay + ', idx ' + ri + ')' });
 
   sheet.getRange(foundRow + 1, cTarget + 1).setValue(value);
-  audit_(user, targetDay, ri, field, value);
+  audit_(targetDay, ri, field, value);
   return jsonOut({ ok: true, day: targetDay, ri: ri, field: field });
 }
 
 /* =========================================================================
    AUDIT LOG
    ========================================================================= */
-function audit_(user, dayN, ri, field, value) {
+function audit_(dayN, ri, field, value) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let s = ss.getSheetByName(AUDIT_SHEET_NAME);
@@ -232,7 +188,7 @@ function audit_(user, dayN, ri, field, value) {
       s.setFrozenRows(1);
     }
     s.appendRow([
-      new Date(), userEmail_(user), user.displayName || '',
+      new Date(), 'Password editor', '',
       dayN, ri, field, value
     ]);
   } catch (err) { /* never fail a write because of audit */ }

@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-<script src="https://alcdn.msauth.net/browser/3.10.0/js/msal-browser.min.js" defer></script>
 <style>
   :root{
     --canvas:#0D1320;
@@ -528,13 +527,13 @@
     </div>
     <div class="controls rise" style="animation-delay:.3s">
       <button class="btn btn-primary" id="signInBtn" type="button">
-        <span class="ms-icon"><span></span><span></span><span></span><span></span></span>
-        <span>Sign in to edit</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        <span>Editor login</span>
       </button>
       <span class="user-pill is-hidden" id="userPill">
         <span class="user-name" id="userName"></span>
         <span class="user-role" id="userRole"></span>
-        <button class="signout" id="signOutBtn" type="button">Sign out</button>
+        <button class="signout" id="signOutBtn" type="button">Lock</button>
       </span>
       <button class="btn is-hidden" id="editBtn" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
@@ -719,10 +718,6 @@ const CONFIG = {
   // Google Apps Script web-app URL (the long /exec one)
   GAS_URL: '',
 
-  // Azure Entra (Microsoft) app registration values
-  MSAL_CLIENT_ID: '',
-  MSAL_TENANT: 'common', // 'common' for any MS account, or your tenant ID for single-tenant
-
   // Optional: shown in the status banner so you know which environment you're on
   ENV_LABEL: ''
 };
@@ -767,14 +762,12 @@ async function fetchSchedule(){
   }
 }
 async function saveEdit(di, ri, field, value){
-  const token = await getToken();
-  if(!token){ showStatus('Sign in to save','err'); return false; }
   const editPassword = getEditPassword();
-  if(!editPassword){ showStatus('Password required','err'); return false; }
+  if(!editPassword || !isAuthorized){ showStatus('Editor login required','err'); return false; }
   try{
     const r = await fetch(CONFIG.GAS_URL, {
       method:'POST',
-      body: JSON.stringify({action:'update', token, editPassword, di, ri, field, value})
+      body: JSON.stringify({action:'update', editPassword, di, ri, field, value})
     });
     const data = await r.json();
     if(data && data.ok){ showStatus('Saved to Sheet','ok'); return true; }
@@ -786,13 +779,8 @@ async function saveEdit(di, ri, field, value){
   }
 }
 
-/* ---------- MSAL (Microsoft) auth ---------- */
-let msalInstance = null;
-let msalReady = false;
-let currentAccount = null;
+/* ---------- password editor auth ---------- */
 let isAuthorized = false;
-let emailAllowed = false;
-let editPasswordAccepted = false;
 const EDIT_PASSWORD_KEY = 'xtmx-edit-password';
 
 function getEditPassword(){
@@ -806,86 +794,43 @@ function setEditPassword(password){
   }catch(e){}
 }
 
-async function initMsal(){
-  if(!CONFIG.MSAL_CLIENT_ID || typeof msal === 'undefined') return false;
-  if(msalReady) return true;
-  msalInstance = new msal.PublicClientApplication({
-    auth: {
-      clientId: CONFIG.MSAL_CLIENT_ID,
-      authority: 'https://login.microsoftonline.com/' + (CONFIG.MSAL_TENANT || 'common'),
-      redirectUri: window.location.origin + window.location.pathname
-    },
-    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
-  });
-  await msalInstance.initialize();
-  const accounts = msalInstance.getAllAccounts();
-  if(accounts.length){ currentAccount = accounts[0]; }
-  msalReady = true;
-  return true;
-}
-async function getToken(){
-  if(!msalReady || !currentAccount) return null;
-  try{
-    const r = await msalInstance.acquireTokenSilent({scopes:['User.Read'], account: currentAccount});
-    return r.accessToken;
-  }catch(e){
-    try{
-      const r = await msalInstance.acquireTokenPopup({scopes:['User.Read']});
-      return r.accessToken;
-    }catch(e2){ return null; }
-  }
-}
 async function signIn(){
-  await initMsal();
-  if(!msalReady){ showBanner('Microsoft sign-in not configured yet. Set <code>CONFIG.MSAL_CLIENT_ID</code> in the file.', 'warn'); return; }
-  try{
-    const r = await msalInstance.loginPopup({scopes:['User.Read'], prompt:'select_account'});
-    currentAccount = r.account;
-    await refreshAuthState();
-  }catch(e){
-    showStatus('Sign-in cancelled','err');
+  const password = window.prompt('Enter edit password');
+  if(!password){ showStatus('Password required','err'); return; }
+  setEditPassword(password);
+  await refreshAuthState();
+  if(isAuthorized){
+    hideBanner();
+    showStatus('Editor unlocked','ok');
+  } else {
+    setEditPassword('');
+    showStatus('Wrong password','err');
   }
 }
 async function signOut(){
-  if(!msalInstance || !currentAccount) return;
-  try{
-    await msalInstance.logoutPopup({account: currentAccount, postLogoutRedirectUri: window.location.href});
-  }catch(e){}
-  currentAccount = null;
   isAuthorized = false;
-  emailAllowed = false;
-  editPasswordAccepted = false;
   setEditPassword('');
   updateAuthUI();
+  if(editing){ editing = false; applyEditMode(); }
+  showStatus('Locked','info');
 }
 async function refreshAuthState(){
-  if(!currentAccount){ updateAuthUI(); return; }
   if(!CONFIG.GAS_URL){
-    isAuthorized = false;
+    isAuthorized = !!getEditPassword();
     updateAuthUI();
-    showBanner('Signed in, but Google Sheet backend not configured. Set <code>CONFIG.GAS_URL</code> to enable saving.', 'warn');
+    if(isAuthorized) showBanner('Editor unlocked locally. Set <code>CONFIG.GAS_URL</code> to save changes to Google Sheets.', 'warn');
     return;
   }
-  const token = await getToken();
-  if(!token){ isAuthorized = false; updateAuthUI(); return; }
   try{
     const editPassword = getEditPassword();
-    const r = await fetch(CONFIG.GAS_URL + (CONFIG.GAS_URL.includes('?')?'&':'?') + 'action=whoami&token=' + encodeURIComponent(token) + '&editPassword=' + encodeURIComponent(editPassword));
+    const r = await fetch(CONFIG.GAS_URL + (CONFIG.GAS_URL.includes('?')?'&':'?') + 'action=whoami&editPassword=' + encodeURIComponent(editPassword));
     const data = await r.json();
     isAuthorized = !!(data && data.authorized);
-    emailAllowed = !!(data && (data.emailAllowed || data.authorized));
-    editPasswordAccepted = !!(data && data.passwordAccepted);
     updateAuthUI();
-    if(!emailAllowed){
-      showBanner('Signed in as <code>' + (data.email || currentAccount.username) + '</code> but this account isn\'t on the editor allow-list. Add it to <code>ALLOWED_EMAILS</code> in the Apps Script.', 'warn');
-    } else if(!editPasswordAccepted){
-      showBanner('Signed in as an editor. Enter the edit password to unlock schedule changes.', 'info');
-    } else {
-      hideBanner();
-    }
+    if(isAuthorized) hideBanner();
   }catch(e){
     isAuthorized = false; updateAuthUI();
-    showStatus('Couldn\'t verify access','err');
+    showStatus('Couldn\'t verify password','err');
   }
 }
 function updateAuthUI(){
@@ -895,25 +840,18 @@ function updateAuthUI(){
   const userName  = document.getElementById('userName');
   const userRole  = document.getElementById('userRole');
 
-  if(currentAccount){
+  if(isAuthorized){
     signInBtn.classList.add('is-hidden');
     userPill.classList.remove('is-hidden');
-    userName.textContent = currentAccount.name || currentAccount.username || 'Signed in';
-    userRole.textContent = isAuthorized ? '· Editor' : (emailAllowed ? '· Password required' : '· View only');
-    userRole.style.color = isAuthorized ? 'var(--c-mile)' : (emailAllowed ? 'var(--brand-1)' : 'var(--ink-dim)');
-    if(emailAllowed){
-      editBtn.classList.remove('is-hidden');
-      editBtn.disabled = false;
-    } else {
-      editBtn.classList.add('is-hidden');
-      if(editing){ editing = false; applyEditMode(); }
-    }
+    userName.textContent = 'Editor';
+    userRole.textContent = '· Unlocked';
+    userRole.style.color = 'var(--c-mile)';
+    editBtn.classList.remove('is-hidden');
+    editBtn.disabled = false;
   } else {
     signInBtn.classList.remove('is-hidden');
     userPill.classList.add('is-hidden');
     editBtn.classList.add('is-hidden');
-    emailAllowed = false;
-    editPasswordAccepted = false;
     if(editing){ editing = false; applyEditMode(); }
   }
 }
@@ -1056,24 +994,7 @@ function applyEditMode(){
 }
 
 editBtn.addEventListener('click', ()=>{
-  if(!emailAllowed){ showStatus('Not authorized','err'); return; }
-  if(!isAuthorized){
-    const password = window.prompt('Enter edit password');
-    if(!password){ showStatus('Password required','err'); return; }
-    setEditPassword(password);
-    refreshAuthState().then(()=>{
-      if(!isAuthorized){
-        setEditPassword('');
-        showStatus('Wrong password','err');
-        return;
-      }
-      editing = true;
-      applyEditMode();
-      hideBanner();
-      showStatus('Editing unlocked','ok');
-    });
-    return;
-  }
+  if(!isAuthorized){ showStatus('Editor login required','err'); return; }
   editing = !editing;
   applyEditMode();
 });
@@ -1137,28 +1058,17 @@ async function boot(){
   // 1) render embedded fallback immediately so the page never feels empty
   select(0);
 
-  // 2) only warn when partially configured
-  if(CONFIG.GAS_URL && !CONFIG.MSAL_CLIENT_ID){
-    showBanner('<code>CONFIG.MSAL_CLIENT_ID</code> is missing — sign-in is disabled, so editing is unavailable.', 'warn');
-  }
-
-  // 3) fetch live data from Sheet if configured
+  // 2) fetch live data from Sheet if configured
   if(CONFIG.GAS_URL){
     const ok = await fetchSchedule();
     if(ok){ render(DAYS[active], active); applyEditMode(); }
   }
 
-  // 4) initialize MSAL (if configured) — silently re-auth if a previous session exists
-  if(CONFIG.MSAL_CLIENT_ID && typeof msal !== 'undefined'){
-    await initMsal();
-    if(currentAccount){ await refreshAuthState(); }
-    else { updateAuthUI(); }
-  } else {
-    signInBtn.classList.add('is-hidden');
-  }
+  // 3) restore editor unlock for this browser tab if a password was entered
+  if(getEditPassword()) await refreshAuthState();
+  else updateAuthUI();
 }
 
-// Wait for MSAL script (loaded with `defer`) before booting
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', boot);
 } else { boot(); }
