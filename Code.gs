@@ -4,13 +4,13 @@
  *
  * Endpoints:
  *   GET  ?action=load              → public read of the schedule
- *   GET  ?action=whoami&token=...  → verify Microsoft token + authorization
- *   POST {action:'update', token, di, ri, field, value} → write one cell
+ *   GET  ?action=whoami&token=...&editPassword=... → verify editor access
+ *   POST {action:'update', token, editPassword, di, ri, field, value} → write one cell
  *
  * Auth model:
  *   - Anyone can read (GET load).
  *   - Writes require a valid Microsoft Graph access token whose email is on
- *     ALLOWED_EMAILS below.
+ *     ALLOWED_EMAILS below, plus the edit password stored in Script Properties.
  *
  * Setup: see SETUP.md.
  */
@@ -36,6 +36,11 @@ const FIELD_MAP = {
   h: 'host'
 };
 
+// Store the real password in Apps Script:
+// Project Settings -> Script properties -> Add property:
+//   EDIT_PASSWORD = your-private-password
+const EDIT_PASSWORD_PROPERTY = 'EDIT_PASSWORD';
+
 /* =========================================================================
    ENTRY POINTS
    ========================================================================= */
@@ -43,7 +48,7 @@ function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || 'load';
     if (action === 'load')   return jsonOut({ ok: true, days: loadDays() });
-    if (action === 'whoami') return handleWhoami_(e.parameter.token);
+    if (action === 'whoami') return handleWhoami_(e.parameter.token, e.parameter.editPassword);
     return jsonOut({ ok: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOut({ ok: false, error: String(err) });
@@ -87,14 +92,25 @@ function isAllowed_(user) {
   return ALLOWED_EMAILS.map(function (e) { return String(e).toLowerCase(); }).indexOf(email) >= 0;
 }
 
-function handleWhoami_(token) {
+function isEditPasswordValid_(password) {
+  const expected = PropertiesService.getScriptProperties().getProperty(EDIT_PASSWORD_PROPERTY);
+  if (!expected) return false;
+  return String(password || '') === expected;
+}
+
+function handleWhoami_(token, editPassword) {
   const user = verifyToken_(token);
   if (!user) return jsonOut({ ok: false, error: 'Invalid token' });
+  const emailAllowed = isAllowed_(user);
+  const passwordAllowed = isEditPasswordValid_(editPassword);
   return jsonOut({
     ok: true,
     email: userEmail_(user),
     name: user.displayName || '',
-    authorized: isAllowed_(user)
+    emailAllowed: emailAllowed,
+    passwordRequired: true,
+    passwordAccepted: passwordAllowed,
+    authorized: emailAllowed && passwordAllowed
   });
 }
 
@@ -159,6 +175,7 @@ function handleUpdate_(body) {
   const user = verifyToken_(body.token);
   if (!user)            return jsonOut({ ok: false, error: 'Invalid token' });
   if (!isAllowed_(user)) return jsonOut({ ok: false, error: 'Not authorized to edit' });
+  if (!isEditPasswordValid_(body.editPassword)) return jsonOut({ ok: false, error: 'Edit password required' });
 
   const di = Number(body.di), ri = Number(body.ri);
   const field = String(body.field || '');

@@ -1,7 +1,7 @@
 # XTMX COLLAB 15 — Training Schedule
 
 > Animated, live-editable pre-induction training timetable for xTransMatrix COLLAB 15 (Jun 29 – Jul 10, 2026).  
-> Built as a **single-file static web app** hosted on GitHub Pages, backed by **Google Sheets** as a database, and gated by **Microsoft Entra ID** for editor access.
+> Built as a **single-file static web app** hosted on GitHub Pages, backed by **Google Sheets** as a database, and gated by **Microsoft Entra ID + edit password** for editor access.
 
 ---
 
@@ -9,7 +9,7 @@
 
 A fully animated training schedule for the XTMX COLLAB 15 pre-induction programme. It covers **9 working days across two weeks**, with every session, break, host, and knowledge check laid out on a day-by-day interactive timeline.
 
-Anyone with the URL can view it. Only people on the editor allow-list can sign in and edit it inline — changes write directly to a Google Sheet and are visible to all viewers on next refresh.
+Anyone with the URL can view it. Only people on the editor allow-list who also know the edit password can edit it inline — changes write directly to a Google Sheet and are visible to all viewers on next refresh.
 
 ---
 
@@ -20,10 +20,10 @@ Anyone with the URL can view it. Only people on the editor allow-list can sign i
 | 📅 **9-day timetable** | Jun 29 – Jul 10, 2026, Mon–Fri across 2 weeks |
 | 🎞 **Animated GIF banners** | One unique Giphy per day, fade-in on tab switch |
 | 🌙☀️ **Light / Dark mode** | Toggle button (bottom-right), persists in `localStorage`, respects system preference on first load |
-| ✏️ **Inline editing** | Click any time, topic, or host to edit when signed in as an editor |
+| ✏️ **Inline editing** | Click any time, topic, or host to edit after Microsoft sign-in and password unlock |
 | 💾 **Google Sheets backend** | All edits write to a live Google Sheet; public viewers see live data on refresh |
-| 🔐 **Microsoft sign-in** | MSAL.js popup — editors sign in with their Microsoft work account |
-| 👥 **Editor allow-list** | Only emails in `ALLOWED_EMAILS` (Apps Script) can write; everyone else is read-only |
+| 🔐 **Microsoft sign-in + password** | MSAL.js popup plus a private edit password stored in Apps Script properties |
+| 👥 **Editor allow-list** | Only emails in `ALLOWED_EMAILS` with the edit password can write; everyone else is read-only |
 | 📋 **Audit log** | Every edit is logged (who, when, what) to a separate `Audit` tab in the Sheet |
 | 📱 **Mobile responsive** | Three-tier layout: desktop / tablet (≤768px) / mobile (≤560px) |
 | 🏷 **Category colour coding** | Session · Milestone · Knowledge Check · Lunch · Break — each with distinct colour, node, and tag |
@@ -70,7 +70,8 @@ Hosting         GitHub Pages (static, free)
 │  │  from Sheet  │      │     Microsoft Graph    │   │
 │  │  on load     │      │  5. Email checked vs   │   │
 │  └──────┬───────┘      │     ALLOWED_EMAILS     │   │
-│         │              │  6. Write unlocked     │   │
+│         │              │  6. Password verified  │   │
+│         │              │  7. Write unlocked     │   │
 └─────────┼──────────────┼────────────────────────┘   
           │              │                             
           ▼              ▼                             
@@ -243,11 +244,11 @@ day_n | day_name | date | gif | join | flag | idx | start | end | topic | host |
 ```
 Public (no auth)  → GET ?action=load       → read-only JSON of schedule
 Signed in, not on list → GET ?action=whoami → {authorized: false}
-Signed in, on list    → GET ?action=whoami → {authorized: true}
-                       → POST action=update  → writes to Sheet + audit log
+Signed in, on list + password → GET ?action=whoami → {authorized: true}
+                               → POST action=update  → writes to Sheet + audit log
 ```
 
-Every write verifies the Microsoft token live against Graph — no session state, no cookies, no secret stored in the HTML.
+Every write verifies the Microsoft token live against Graph and checks the edit password stored in Apps Script properties — no password is stored in the public HTML.
 
 ---
 
@@ -258,9 +259,10 @@ Every write verifies the Microsoft token live against Graph — no session state
 1. `sheets.new` → name it **XTMX COLLAB Schedule**
 2. **Extensions → Apps Script** → paste `Code.gs`
 3. Set your email in `ALLOWED_EMAILS`
-4. Run `setupSheet()` (first time, approve permissions)
-5. **Deploy → New deployment → Web app → Execute as Me → Anyone → Deploy**
-6. Copy the `/exec` URL → this is `GAS_URL`
+4. Apps Script **Project Settings → Script properties** → add `EDIT_PASSWORD` with your private edit password
+5. Run `setupSheet()` (first time, approve permissions)
+6. **Deploy → New deployment → Web app → Execute as Me → Anyone → Deploy**
+7. Copy the `/exec` URL → this is `GAS_URL`
 
 ### Step 2 — Azure Entra ID
 
@@ -292,11 +294,12 @@ Rename to `index.html` → push to GitHub repo → enable **Settings → Pages �
 ```
 1. Open the GitHub Pages URL
 2. Click "Sign in to edit" → Microsoft popup → sign in with work account
-3. Account verified → "Editor" badge appears
-4. Click "Edit schedule"
-5. Click any time, topic, or host → type your change → click away
-6. "Saving…" → "Saved to Sheet" pill flashes
-7. Anyone who refreshes the page sees the update
+3. Account verified → "Password required" badge appears
+4. Click "Edit schedule" → enter the edit password
+5. Password accepted → "Editor" badge appears
+6. Click any time, topic, or host → type your change → click away
+7. "Saving…" → "Saved to Sheet" pill flashes
+8. Anyone who refreshes the page sees the update
 ```
 
 ---
@@ -324,6 +327,7 @@ Rename to `index.html` → push to GitHub repo → enable **Settings → Pages �
 | Schedule not loading from Sheet | Open `GAS_URL` in browser — should return `{"ok":true,"days":[...]}`. If it shows a login page, re-deploy with *Who has access: Anyone* |
 | "Redirect URI mismatch" on sign-in | Copy the exact browser URL (including trailing slash) into Azure → Authentication → Redirect URIs |
 | Signed in but "View only" | Email returned by Microsoft not in `ALLOWED_EMAILS`. Copy it from the warning banner, add to `Code.gs`, redeploy |
+| Signed in but "Wrong password" | Confirm `EDIT_PASSWORD` in Apps Script → Project Settings → Script properties |
 | Edits not visible to others | They need to click **Refresh** on the page, or reload the tab |
 | Apps Script "Authorization required" | First-run prompt — click *Review permissions → Advanced → Go to (unsafe) → Allow* |
 | Light/Dark toggle not visible | Check browser isn't blocking `localStorage`. Toggle is fixed bottom-right, orange pill in dark mode |

@@ -1,13 +1,13 @@
 # XTMX COLLAB 15 — Setup Guide
 
-This is a static HTML schedule with a Google Sheet as the database and Microsoft sign-in for editing. Public viewers see live data; only allow-listed accounts can edit.
+This is a static HTML schedule with a Google Sheet as the database and Microsoft sign-in plus an edit password for editing. Public viewers see live data; only allow-listed accounts with the password can edit.
 
 **Stack**
 
 - **GitHub Pages** — serves the HTML (free, public viewer URL)
 - **Google Sheet + Apps Script Web App** — read/write API for the schedule
 - **Microsoft Entra ID + MSAL.js** — popup sign-in for editors
-- **Allow-list of emails** in Apps Script — gates write access
+- **Allow-list of emails + edit password** in Apps Script — gates write access
 
 Two files in this folder:
 
@@ -31,9 +31,15 @@ You'll do four things, in this order: **Sheet → Azure → GitHub → wire up C
      'someone.else@xtransmatrix.com'
    ];
    ```
-6. Save (**Ctrl+S** / **⌘S**). When prompted, give the project a name like "XTMX Schedule API."
-7. **Seed the sheet:** in the function dropdown (top toolbar), pick `setupSheet` → click **Run**. Google will ask for permissions — review and **Allow**. After a few seconds your Sheet will have a **Schedule** tab with all 8 days of COLLAB 15 prefilled.
-8. **Deploy as Web App:** click **Deploy → New deployment**.
+6. Add the private edit password:
+    - Apps Script left sidebar → **Project Settings**
+    - Under **Script properties**, click **Add script property**
+    - Property: `EDIT_PASSWORD`
+    - Value: your private edit password
+    - Click **Save script properties**
+7. Save (**Ctrl+S** / **⌘S**). When prompted, give the project a name like "XTMX Schedule API."
+8. **Seed the sheet:** in the function dropdown (top toolbar), pick `setupSheet` → click **Run**. Google will ask for permissions — review and **Allow**. After a few seconds your Sheet will have a **Schedule** tab with all 8 days of COLLAB 15 prefilled.
+9. **Deploy as Web App:** click **Deploy → New deployment**.
     - Click the gear icon → **Web app**
     - Description: `v1`
     - **Execute as:** *Me*
@@ -105,11 +111,12 @@ This is what makes the "Sign in with Microsoft" popup work.
 1. Open the GitHub Pages URL.
 2. You should see the schedule with a yellow info banner only if `CONFIG` is still empty. If everything's wired, the banner should be gone and the schedule loads from your Sheet.
 3. Click **"Sign in to edit"** → Microsoft popup → choose your work account.
-4. After sign-in you should see your name + **Editor** badge. Click **Edit schedule**.
-5. Edit a time, topic, or host name → click outside the field → you'll see **"Saving…"** then **"Saved to Sheet"**.
-6. Open the Google Sheet directly — you should see the change.
-7. Open the URL in an Incognito window — you should see the change (read-only, no sign-in option needed).
-8. **Audit log:** the Sheet auto-creates an `Audit` tab tracking every edit (who, when, what changed).
+4. After sign-in you should see your name + **Password required** badge. Click **Edit schedule**, then enter the edit password.
+5. After the password is accepted you should see your name + **Editor** badge.
+6. Edit a time, topic, or host name → click outside the field → you'll see **"Saving…"** then **"Saved to Sheet"**.
+7. Open the Google Sheet directly — you should see the change.
+8. Open the URL in an Incognito window — you should see the change (read-only, no sign-in option needed).
+9. **Audit log:** the Sheet auto-creates an `Audit` tab tracking every edit (who, when, what changed).
 
 ---
 
@@ -118,6 +125,7 @@ This is what makes the "Sign in with Microsoft" popup work.
 - **Change topics / hosts / times:** sign in on the live URL and edit inline. Or edit the Google Sheet directly — both work.
 - **Add or remove a day, or change a day's metadata (gif/date/etc):** edit the Sheet directly. The page picks up the new shape on next load.
 - **Add a new editor:** Apps Script editor → update `ALLOWED_EMAILS` → **Deploy → Manage deployments → Edit → New version → Deploy**.
+- **Change the edit password:** Apps Script → Project Settings → Script properties → update `EDIT_PASSWORD`. No HTML change is needed.
 - **Code changes (HTML/CSS/JS):** push the new `index.html` to GitHub. Pages redeploys automatically in ~60 seconds.
 
 ---
@@ -132,6 +140,9 @@ The URL in the browser doesn't match what's registered in Azure. Copy the URL ex
 
 **Signed in but "Not authorized to edit"**
 The email Microsoft returns isn't in `ALLOWED_EMAILS`. Check the email in the warning banner, add it to the list in `Code.gs`, redeploy.
+
+**Signed in but "Wrong password"**
+Update or confirm the `EDIT_PASSWORD` value in Apps Script → Project Settings → Script properties.
 
 **Edits don't appear for other people**
 They need to hit **Refresh** on the page (the button on the right) — the page caches data per-session. Alternatively, ask them to reload the tab.

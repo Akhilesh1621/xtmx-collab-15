@@ -769,10 +769,12 @@ async function fetchSchedule(){
 async function saveEdit(di, ri, field, value){
   const token = await getToken();
   if(!token){ showStatus('Sign in to save','err'); return false; }
+  const editPassword = getEditPassword();
+  if(!editPassword){ showStatus('Password required','err'); return false; }
   try{
     const r = await fetch(CONFIG.GAS_URL, {
       method:'POST',
-      body: JSON.stringify({action:'update', token, di, ri, field, value})
+      body: JSON.stringify({action:'update', token, editPassword, di, ri, field, value})
     });
     const data = await r.json();
     if(data && data.ok){ showStatus('Saved to Sheet','ok'); return true; }
@@ -789,6 +791,20 @@ let msalInstance = null;
 let msalReady = false;
 let currentAccount = null;
 let isAuthorized = false;
+let emailAllowed = false;
+let editPasswordAccepted = false;
+const EDIT_PASSWORD_KEY = 'xtmx-edit-password';
+
+function getEditPassword(){
+  try{ return sessionStorage.getItem(EDIT_PASSWORD_KEY) || ''; }
+  catch(e){ return ''; }
+}
+function setEditPassword(password){
+  try{
+    if(password) sessionStorage.setItem(EDIT_PASSWORD_KEY, password);
+    else sessionStorage.removeItem(EDIT_PASSWORD_KEY);
+  }catch(e){}
+}
 
 async function initMsal(){
   if(!CONFIG.MSAL_CLIENT_ID || typeof msal === 'undefined') return false;
@@ -837,6 +853,9 @@ async function signOut(){
   }catch(e){}
   currentAccount = null;
   isAuthorized = false;
+  emailAllowed = false;
+  editPasswordAccepted = false;
+  setEditPassword('');
   updateAuthUI();
 }
 async function refreshAuthState(){
@@ -850,12 +869,17 @@ async function refreshAuthState(){
   const token = await getToken();
   if(!token){ isAuthorized = false; updateAuthUI(); return; }
   try{
-    const r = await fetch(CONFIG.GAS_URL + (CONFIG.GAS_URL.includes('?')?'&':'?') + 'action=whoami&token=' + encodeURIComponent(token));
+    const editPassword = getEditPassword();
+    const r = await fetch(CONFIG.GAS_URL + (CONFIG.GAS_URL.includes('?')?'&':'?') + 'action=whoami&token=' + encodeURIComponent(token) + '&editPassword=' + encodeURIComponent(editPassword));
     const data = await r.json();
     isAuthorized = !!(data && data.authorized);
+    emailAllowed = !!(data && (data.emailAllowed || data.authorized));
+    editPasswordAccepted = !!(data && data.passwordAccepted);
     updateAuthUI();
-    if(!isAuthorized){
+    if(!emailAllowed){
       showBanner('Signed in as <code>' + (data.email || currentAccount.username) + '</code> but this account isn\'t on the editor allow-list. Add it to <code>ALLOWED_EMAILS</code> in the Apps Script.', 'warn');
+    } else if(!editPasswordAccepted){
+      showBanner('Signed in as an editor. Enter the edit password to unlock schedule changes.', 'info');
     } else {
       hideBanner();
     }
@@ -875,9 +899,9 @@ function updateAuthUI(){
     signInBtn.classList.add('is-hidden');
     userPill.classList.remove('is-hidden');
     userName.textContent = currentAccount.name || currentAccount.username || 'Signed in';
-    userRole.textContent = isAuthorized ? '· Editor' : '· View only';
-    userRole.style.color = isAuthorized ? 'var(--c-mile)' : 'var(--ink-dim)';
-    if(isAuthorized){
+    userRole.textContent = isAuthorized ? '· Editor' : (emailAllowed ? '· Password required' : '· View only');
+    userRole.style.color = isAuthorized ? 'var(--c-mile)' : (emailAllowed ? 'var(--brand-1)' : 'var(--ink-dim)');
+    if(emailAllowed){
       editBtn.classList.remove('is-hidden');
       editBtn.disabled = false;
     } else {
@@ -888,6 +912,8 @@ function updateAuthUI(){
     signInBtn.classList.remove('is-hidden');
     userPill.classList.add('is-hidden');
     editBtn.classList.add('is-hidden');
+    emailAllowed = false;
+    editPasswordAccepted = false;
     if(editing){ editing = false; applyEditMode(); }
   }
 }
@@ -1030,7 +1056,24 @@ function applyEditMode(){
 }
 
 editBtn.addEventListener('click', ()=>{
-  if(!isAuthorized){ showStatus('Not authorized','err'); return; }
+  if(!emailAllowed){ showStatus('Not authorized','err'); return; }
+  if(!isAuthorized){
+    const password = window.prompt('Enter edit password');
+    if(!password){ showStatus('Password required','err'); return; }
+    setEditPassword(password);
+    refreshAuthState().then(()=>{
+      if(!isAuthorized){
+        setEditPassword('');
+        showStatus('Wrong password','err');
+        return;
+      }
+      editing = true;
+      applyEditMode();
+      hideBanner();
+      showStatus('Editing unlocked','ok');
+    });
+    return;
+  }
   editing = !editing;
   applyEditMode();
 });
