@@ -519,7 +519,7 @@
       </span>
       <span class="chip">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-        9 days · across 2 weeks</span>
+        <span id="dayCountText">9 days · across 2 weeks</span></span>
       <span class="chip">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 7v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V7z"/></svg>
         Day 1 join · 10:00 AM
@@ -898,16 +898,22 @@ const prog = document.getElementById('prog');
 const btns = [];
 let active = 0;
 
-DAYS.forEach((d,i)=>{
-  if(d.n===6){const sep=document.createElement('div');sep.className='day-div';sep.setAttribute('aria-hidden','true');daysEl.appendChild(sep);}
-  const b=document.createElement('button');
-  b.className='day-btn'+(i===0?' active':'')+(d.tbd?' tbd':'');
-  b.setAttribute('role','tab');
-  b.innerHTML=`<div class="dnum">DAY ${d.n}</div><div class="dday">${d.day}</div><div class="ddate">${d.date}</div>${d.tbd?'<div class="soon">TBD</div>':''}`;
-  b.addEventListener('click',()=>select(i));
-  daysEl.appendChild(b);
-  btns.push(b);
-});
+function renderDayTabs(){
+  daysEl.innerHTML = '';
+  btns.length = 0;
+  DAYS.forEach((d,i)=>{
+    if(d.n===6){const sep=document.createElement('div');sep.className='day-div';sep.setAttribute('aria-hidden','true');daysEl.appendChild(sep);}
+    const b=document.createElement('button');
+    b.className='day-btn'+(i===active?' active':'')+(d.tbd?' tbd':'');
+    b.setAttribute('role','tab');
+    b.innerHTML=`<div class="dnum">DAY ${d.n}</div><div class="dday">${d.day}</div><div class="ddate">${d.date}</div>${d.tbd?'<div class="soon">TBD</div>':''}`;
+    b.addEventListener('click',()=>select(i));
+    daysEl.appendChild(b);
+    btns.push(b);
+  });
+  document.getElementById('dayCountText').textContent = `${DAYS.length} days · across 2 weeks`;
+}
+renderDayTabs();
 
 function render(d, di){
   let html = `${d.gif?`<div class="day-gif in"><img src="${d.gif}" alt="" loading="lazy" referrerpolicy="no-referrer"></div>`:""}<div class="day-head">
@@ -1003,8 +1009,11 @@ signOutBtn.addEventListener('click', signOut);
 refreshBtn.addEventListener('click', async ()=>{
   refreshBtn.disabled = true;
   const ok = await fetchSchedule();
-  render(DAYS[active], active);
-  applyEditMode();
+  if(ok){
+    active = Math.min(active, DAYS.length - 1);
+    renderDayTabs();
+  }
+  select(active);
   refreshBtn.disabled = false;
   showStatus(ok ? 'Refreshed' : 'No live data', ok ? 'ok' : 'info');
 });
@@ -1061,7 +1070,11 @@ async function boot(){
   // 2) fetch live data from Sheet if configured
   if(CONFIG.GAS_URL){
     const ok = await fetchSchedule();
-    if(ok){ render(DAYS[active], active); applyEditMode(); }
+    if(ok){
+      active = Math.min(active, DAYS.length - 1);
+      renderDayTabs();
+      select(active);
+    }
   }
 
   // 3) restore editor unlock for this browser tab if a password was entered
