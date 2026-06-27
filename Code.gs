@@ -101,7 +101,7 @@ function loadDays() {
       dayMap[n] = {
         n: Number(n),
         day: String(row[cName] || ''),
-        date: String(row[cDate] || ''),
+        date: displayValue_(row[cDate], 'MMM d'),
         rows: []
       };
       if (cGif >= 0 && row[cGif])   dayMap[n].gif  = String(row[cGif]);
@@ -111,8 +111,8 @@ function loadDays() {
 
     if (cIdx >= 0 && row[cIdx] !== '' && row[cIdx] !== null) {
       const item = {
-        s: String(row[cStart] || ''),
-        e: String(row[cEnd] || ''),
+        s: displayValue_(row[cStart], 'h:mm a'),
+        e: displayValue_(row[cEnd], 'h:mm a'),
         t: String(row[cTopic] || ''),
         h: cHost >= 0 ? String(row[cHost] || '') : '',
         cat: (cCat >= 0 && row[cCat]) ? String(row[cCat]) : 'session'
@@ -201,6 +201,13 @@ function jsonOut(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function displayValue_(value, datePattern) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, 'UTC', datePattern);
+  }
+  return String(value || '');
 }
 
 /* =========================================================================
