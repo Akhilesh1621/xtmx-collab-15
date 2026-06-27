@@ -526,28 +526,11 @@
       </span>
     </div>
     <div class="controls rise" style="animation-delay:.3s">
-      <button class="btn btn-primary" id="signInBtn" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-        <span>Editor login</span>
-      </button>
-      <span class="user-pill is-hidden" id="userPill">
-        <span class="user-name" id="userName"></span>
-        <span class="user-role" id="userRole"></span>
-        <button class="signout" id="signOutBtn" type="button">Lock</button>
-      </span>
-      <button class="btn is-hidden" id="editBtn" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-        <span id="editLbl">Edit schedule</span>
-      </button>
       <button class="btn" id="refreshBtn" type="button" title="Reload latest schedule from Google Sheet">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
         <span>Refresh</span>
       </button>
       <span class="status-pill" id="status">Saved</span>
-    </div>
-    <div class="banner" id="banner"></div>
-    <div class="edit-hint" id="editHint">
-      ✏️ <strong>Editing on.</strong> Click any time, topic, or host to edit. Changes save to the Google Sheet — viewers see updates after refreshing.
     </div>
   </header>
 
@@ -761,104 +744,6 @@ async function fetchSchedule(){
     return false;
   }
 }
-async function saveEdit(di, ri, field, value){
-  const editPassword = getEditPassword();
-  if(!editPassword || !isAuthorized){ showStatus('Editor login required','err'); return false; }
-  try{
-    const r = await fetch(CONFIG.GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({action:'update', editPassword, di, ri, field, value})
-    });
-    const data = await r.json();
-    if(data && data.ok){ showStatus('Saved to Sheet','ok'); return true; }
-    showStatus(data && data.error ? data.error : 'Save failed','err');
-    return false;
-  }catch(e){
-    showStatus('Network error','err');
-    return false;
-  }
-}
-
-/* ---------- password editor auth ---------- */
-let isAuthorized = false;
-const EDIT_PASSWORD_KEY = 'xtmx-edit-password';
-
-function getEditPassword(){
-  try{ return sessionStorage.getItem(EDIT_PASSWORD_KEY) || ''; }
-  catch(e){ return ''; }
-}
-function setEditPassword(password){
-  try{
-    if(password) sessionStorage.setItem(EDIT_PASSWORD_KEY, password);
-    else sessionStorage.removeItem(EDIT_PASSWORD_KEY);
-  }catch(e){}
-}
-
-async function signIn(){
-  const password = window.prompt('Enter edit password');
-  if(!password){ showStatus('Password required','err'); return; }
-  setEditPassword(password);
-  await refreshAuthState();
-  if(isAuthorized){
-    hideBanner();
-    showStatus('Editor unlocked','ok');
-  } else {
-    setEditPassword('');
-    showStatus('Wrong password','err');
-  }
-}
-async function signOut(){
-  isAuthorized = false;
-  setEditPassword('');
-  updateAuthUI();
-  if(editing){ editing = false; applyEditMode(); }
-  showStatus('Locked','info');
-}
-async function refreshAuthState(){
-  if(!CONFIG.GAS_URL){
-    isAuthorized = !!getEditPassword();
-    updateAuthUI();
-    if(isAuthorized) showBanner('Editor unlocked locally. Set <code>CONFIG.GAS_URL</code> to save changes to Google Sheets.', 'warn');
-    return;
-  }
-  try{
-    const editPassword = getEditPassword();
-    const r = await fetch(CONFIG.GAS_URL + (CONFIG.GAS_URL.includes('?')?'&':'?') + 'action=whoami&editPassword=' + encodeURIComponent(editPassword));
-    const data = await r.json();
-    isAuthorized = !!(data && data.authorized);
-    updateAuthUI();
-    if(isAuthorized) hideBanner();
-  }catch(e){
-    isAuthorized = false; updateAuthUI();
-    showStatus('Couldn\'t verify password','err');
-  }
-}
-function updateAuthUI(){
-  const signInBtn = document.getElementById('signInBtn');
-  const userPill  = document.getElementById('userPill');
-  const editBtn   = document.getElementById('editBtn');
-  const userName  = document.getElementById('userName');
-  const userRole  = document.getElementById('userRole');
-
-  if(isAuthorized){
-    signInBtn.classList.add('is-hidden');
-    userPill.classList.remove('is-hidden');
-    userName.textContent = 'Editor';
-    userRole.textContent = '· Unlocked';
-    userRole.style.color = 'var(--c-mile)';
-    editBtn.classList.remove('is-hidden');
-    editBtn.disabled = false;
-  } else {
-    signInBtn.classList.remove('is-hidden');
-    userPill.classList.add('is-hidden');
-    editBtn.classList.add('is-hidden');
-    if(editing){ editing = false; applyEditMode(); }
-  }
-}
-
-function persist(){ /* no-op: persistence is via Google Sheet */ }
-function flashSaved(){ /* no-op: replaced by showStatus */ }
-
 const CATLABEL = {session:"Session", milestone:"Milestone", break:"Break", lunch:"Lunch", check:"Check"};
 
 function to24(t){
@@ -976,36 +861,10 @@ function select(i){
   btns.forEach((b,bi)=>b.classList.toggle('active',bi===i));
   prog.style.width = ((i+1)/DAYS.length*100)+'%';
   render(DAYS[i], i);
-  applyEditMode();
   btns[i].scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});
 }
 
-/* ---------- editor wiring ---------- */
-let editing = false;
-const editBtn    = document.getElementById('editBtn');
-const editLbl    = document.getElementById('editLbl');
-const signInBtn  = document.getElementById('signInBtn');
-const signOutBtn = document.getElementById('signOutBtn');
 const refreshBtn = document.getElementById('refreshBtn');
-
-function applyEditMode(){
-  document.body.classList.toggle('edit-mode', editing);
-  document.querySelectorAll('.editable').forEach(el=>{
-    el.contentEditable = editing ? 'plaintext-only' : 'false';
-  });
-  if(editBtn){
-    editBtn.classList.toggle('on', editing);
-    if(editLbl) editLbl.textContent = editing ? 'Done editing' : 'Edit schedule';
-  }
-}
-
-editBtn.addEventListener('click', ()=>{
-  if(!isAuthorized){ showStatus('Editor login required','err'); return; }
-  editing = !editing;
-  applyEditMode();
-});
-signInBtn.addEventListener('click', signIn);
-signOutBtn.addEventListener('click', signOut);
 refreshBtn.addEventListener('click', async ()=>{
   refreshBtn.disabled = true;
   const ok = await fetchSchedule();
@@ -1016,35 +875,6 @@ refreshBtn.addEventListener('click', async ()=>{
   select(active);
   refreshBtn.disabled = false;
   showStatus(ok ? 'Refreshed' : 'No live data', ok ? 'ok' : 'info');
-});
-
-/* Save on input — debounced per editable so we don't spam the Sheet */
-const pendingSaves = new Map();
-document.getElementById('panel').addEventListener('input', e=>{
-  const t = e.target;
-  if(!t.classList || !t.classList.contains('editable')) return;
-  const di = +t.dataset.d, ri = +t.dataset.r, f = t.dataset.f;
-  if(isNaN(di) || isNaN(ri) || !f) return;
-  const val = t.textContent.replace(/\s+/g,' ').trim();
-  DAYS[di].rows[ri][f] = val;
-  if(val && t.classList.contains('empty')) t.classList.remove('empty');
-
-  const key = `${di}:${ri}:${f}`;
-  clearTimeout(pendingSaves.get(key));
-  pendingSaves.set(key, setTimeout(async ()=>{
-    pendingSaves.delete(key);
-    if(!isAuthorized) return;
-    if(!CONFIG.GAS_URL){ showStatus('No backend set','err'); return; }
-    showStatus('Saving…','info');
-    await saveEdit(di, ri, f, val);
-  }, 700));
-});
-
-document.getElementById('panel').addEventListener('keydown', e=>{
-  if(e.key === 'Enter' && e.target.classList && e.target.classList.contains('editable')){
-    e.preventDefault();
-    e.target.blur();
-  }
 });
 
 /* ---------- theme ---------- */
@@ -1077,9 +907,6 @@ async function boot(){
     }
   }
 
-  // 3) restore editor unlock for this browser tab if a password was entered
-  if(getEditPassword()) await refreshAuthState();
-  else updateAuthUI();
 }
 
 if(document.readyState === 'loading'){
