@@ -290,17 +290,19 @@
     transition:width .5s cubic-bezier(.2,.7,.2,1)}
 
   /* ---------- DAY GIF BANNER ---------- */
-  .day-gif{position:relative;height:148px;border-radius:16px;overflow:hidden;margin:24px 0 0;
+  .day-gif{position:relative;height:220px;border-radius:16px;overflow:hidden;margin:24px 0 0;
     border:1px solid var(--line);background:var(--surface);
     box-shadow:0 14px 34px -18px rgba(0,0,0,.7)}
   .day-gif::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;z-index:2;
     background:linear-gradient(90deg,var(--brand-1),var(--brand-2))}
   .day-gif::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
-    background:linear-gradient(180deg,rgba(13,19,32,.05),rgba(13,19,32,.42))}
-  .day-gif img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+    background:linear-gradient(180deg,transparent 55%,rgba(13,19,32,.16))}
+  body.light .day-gif::after{background:linear-gradient(180deg,transparent 65%,rgba(15,23,42,.08))}
+  .day-gif img{width:100%;height:100%;object-fit:cover;object-position:center;display:block;
+    opacity:1;filter:saturate(1.08) contrast(1.04)}
   .day-gif.in{animation:gifin .6s cubic-bezier(.2,.7,.2,1) both}
-  @keyframes gifin{from{opacity:0;transform:scale(1.03)}to{opacity:1;transform:none}}
-  @media(max-width:560px){.day-gif{height:108px}}
+  @keyframes gifin{from{transform:scale(1.02)}to{transform:none}}
+  @media(max-width:560px){.day-gif{height:150px}}
 
   /* ---------- DAY HEAD ---------- */
   .day-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;margin:18px 0 22px}
@@ -460,7 +462,7 @@
     .day-head .when{font-size:12px}
     .day-head .span{margin-left:0;width:auto;font-size:11px}
     .day-flag{font-size:10px;padding:4px 9px}
-    .day-gif{height:90px}
+    .day-gif{height:140px}
     .spine{left:calc(var(--rail) + 8px)}
     .row{grid-template-columns:var(--rail) 20px 1fr}
     .row .time{font-size:11px;padding:14px 6px 0 0}
@@ -801,7 +803,7 @@ function renderDayTabs(){
 renderDayTabs();
 
 function render(d, di){
-  let html = `${d.gif?`<div class="day-gif in"><img src="${d.gif}" alt="" loading="lazy" referrerpolicy="no-referrer"></div>`:""}<div class="day-head">
+  let html = `${d.gif?`<div class="day-gif in"><img src="${d.gif}" alt="Day ${d.n} training highlight" loading="eager" referrerpolicy="no-referrer"></div>`:""}<div class="day-head">
       <h2>Day ${d.n} — ${d.day}</h2>
       <span class="when">${d.date}, 2026${d.join? ' · '+d.join : ''}</span>
       ${d.flag?`<span class="day-flag">${d.flag}</span>`:''}
